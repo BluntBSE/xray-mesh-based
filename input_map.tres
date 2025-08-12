@@ -1,0 +1,13 @@
+[gd_resource type="InputMap" load_steps=2 format=3]
+
+[action name="move_forward"]
+events=[InputEventKey { "keycode": 87, "physical_keycode": 0, "unicode": 0, "pressed": false, "echo": false, "modifiers": { "shift": false, "alt": false, "control": false, "meta": false } }]
+
+[action name="move_backward"]
+events=[InputEventKey { "keycode": 83, "physical_keycode": 0, "unicode": 0, "pressed": false, "echo": false, "modifiers": { "shift": false, "alt": false, "control": false, "meta": false } }]
+
+[action name="move_left"]
+events=[InputEventKey { "keycode": 65, "physical_keycode": 0, "unicode": 0, "pressed": false, "echo": false, "modifiers": { "shift": false, "alt": false, "control": false, "meta": false } }]
+
+[action name="move_right"]
+events=[InputEventKey { "keycode": 68, "physical_keycode": 0, "unicode": 0, "pressed": false, "echo": false, "modifiers": { "shift": false, "alt": false, "control": false, "meta": false } }]
