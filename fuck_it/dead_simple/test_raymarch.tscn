@@ -1,9 +1,11 @@
-[gd_scene load_steps=4 format=3 uid="uid://dwncvymvi4yte"]
+[gd_scene load_steps=5 format=3 uid="uid://dwncvymvi4yte"]
 
 [ext_resource type="Script" uid="uid://dag3fuq21ibuy" path="res://fuck_it/dead_simple/raymarch_controller.gd" id="1_test"]
 [ext_resource type="Script" uid="uid://msr2hdpf1wv5" path="res://fuck_it/dead_simple/raymarch_1_camera.gd" id="2_camera"]
 
-[sub_resource type="PrismMesh" id="PrismMesh_eqa12"]
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_030v4"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_030v4"]
 
 [node name="RayMarchTest" type="Node3D"]
 
@@ -19,7 +21,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="RayMarchController" type="Control" parent="UI"]
+[node name="RayMarchController" type="Control" parent="UI" node_paths=PackedStringArray("target_mesh")]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -27,6 +29,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_test")
+target_mesh = NodePath("../../b_skull")
 
 [node name="Depthviewer" type="ColorRect" parent="UI"]
 unique_name_in_owner = true
@@ -40,7 +43,14 @@ color = Color(0, 0, 0, 1)
 
 [node name="MyPrism" type="MeshInstance3D" parent="."]
 unique_name_in_owner = true
-visible = false
-mesh = SubResource("PrismMesh_eqa12")
+mesh = SubResource("CapsuleMesh_030v4")
+
+[node name="k9_int_organs_skeleton_alone" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.742706, 0, 1.806)
+
+[node name="b_skull" type="MeshInstance3D" parent="."]
+transform = Transform3D(-300, -0.000116824, -8.81999e-12, 0.000116824, -300, -2.26494e-05, 0, -2.26494e-05, 300, 0, 0, 0)
+mesh = SubResource("BoxMesh_030v4")
+skeleton = NodePath("")
 
 [connection signal="ready" from="UI/RayMarchController" to="UI/RayMarchController" method="_on_ready"]
