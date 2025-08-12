@@ -9,7 +9,7 @@ var is_rotating: bool = false
 
 func _ready():
     # Set initial position - NO look_at calls!
-    position = Vector3(0, 0, 8)
+    pass
 
 func _input(event):
     if event is InputEventMouseButton:

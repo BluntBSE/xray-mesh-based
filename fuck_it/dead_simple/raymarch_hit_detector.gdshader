@@ -16,6 +16,7 @@ uniform sampler2D grid_texture : filter_nearest;
 uniform int grid_resolution;
 uniform vec3 grid_min_bound;
 uniform vec3 grid_max_bound;
+uniform int triangles_per_cell;
 
 varying vec2 screen_uv;
 
@@ -81,49 +82,75 @@ void get_triangle_vertices(int triangle_idx, out vec3 v0, out vec3 v1, out vec3 
     v2 = (mesh_transform * vec4(vertex, 1.0)).xyz;
 }
 
-// Get grid cell density (simplified spatial acceleration)
-float get_grid_density(vec3 world_pos) {
-    vec3 grid_pos = (world_pos - grid_min_bound) / (grid_max_bound - grid_min_bound);
+// Spatially accelerated point-in-mesh testing
+bool is_point_inside_mesh_spatial(vec3 point) {
+    // Convert world position to grid coordinates
+    vec3 grid_pos = (point - grid_min_bound) / (grid_max_bound - grid_min_bound);
     
     if (any(lessThan(grid_pos, vec3(0.0))) || any(greaterThan(grid_pos, vec3(1.0)))) {
-        return 0.0; // Outside grid
+        return false; // Outside grid bounds
     }
     
     ivec3 cell = ivec3(grid_pos * float(grid_resolution));
     cell = clamp(cell, ivec3(0), ivec3(grid_resolution - 1));
     
-    int y = cell.y * grid_resolution + cell.z; // Flatten 3D to 2D
-    if (y >= grid_resolution * grid_resolution) return 0.0;
+    // Calculate base offset in the grid texture for this cell
+    int base_y = (cell.y * grid_resolution + cell.z) * triangles_per_cell;
     
-    return texelFetch(grid_texture, ivec2(cell.x, y), 0).r;
+    // Cast ray to test inside/outside
+    vec3 test_ray_dir = normalize(vec3(1.0, 0.37, 0.73));
+    int intersection_count = 0;
+    
+    // Test only triangles in this grid cell
+    for (int i = 0; i < triangles_per_cell; i++) {
+        int pixel_y = base_y + i;
+        
+        // Get triangle index from grid texture
+        float triangle_id = texelFetch(grid_texture, ivec2(cell.x, pixel_y), 0).r;
+        
+        // End of list marker
+        if (triangle_id < 0.0) break;
+        
+        int triangle_idx = int(triangle_id);
+        if (triangle_idx >= triangle_count) break;
+        
+        // Get triangle vertices and test intersection
+        vec3 v0, v1, v2;
+        get_triangle_vertices(triangle_idx, v0, v1, v2);
+        
+        float t;
+        if (ray_triangle_intersect(point, test_ray_dir, v0, v1, v2, t)) {
+            intersection_count++;
+        }
+    }
+    
+    // Odd number of intersections = inside
+    return (intersection_count % 2) == 1;
 }
 
-// Optimized intersection counting using spatial acceleration
-int count_mesh_intersections_optimized(vec3 ray_origin, vec3 ray_dir) {
-    // For now, use grid density as a proxy for inside/outside
-    // In a full implementation, we'd traverse the grid and only test triangles in relevant cells
-    float density = get_grid_density(ray_origin);
-    
-    // More sensitive threshold for smoother results
-    return (density > 0.05) ? 1 : 0; // Lower threshold for better detection
-}
-
-// Ray marching function - now with mesh intersection for X-ray effect
+// Spatially accelerated ray marching
 vec3 ray_march(vec3 ray_origin, vec3 ray_direction) {
     float total_distance = 0.0;
     float accumulated_density = 0.0;
-    vec3 current_pos = ray_origin;
-
-    // Higher quality settings for smoother results
+    
     float material_density = 0.8;
-    float step_size = 0.02; // Much smaller steps for smoother results
-
-    for (int i = 0; i < 200; i++) { // More iterations for higher quality
-        current_pos = ray_origin + ray_direction * total_distance;
+    float step_size = 0.03; // Smaller steps again since we're much faster now
+    float max_distance = 5.0;
+    
+    // More iterations since each step is much cheaper
+    for (int i = 0; i < 1500; i++) {
+        vec3 current_pos = ray_origin + ray_direction * total_distance;
         
-        // Use optimized spatial acceleration instead of full triangle testing
-        int intersections = count_mesh_intersections_optimized(current_pos, ray_direction);
-        bool inside_mesh = intersections > 0; // Simplified inside/outside test
+        // Early exit if outside mesh bounds
+        vec3 bounds_check = (current_pos - grid_min_bound) / (grid_max_bound - grid_min_bound);
+        if (any(lessThan(bounds_check, vec3(-0.1))) || any(greaterThan(bounds_check, vec3(1.1)))) {
+            total_distance += step_size;
+            if (total_distance > max_distance) break;
+            continue;
+        }
+        
+        // Spatially accelerated inside/outside test
+        bool inside_mesh = is_point_inside_mesh_spatial(current_pos);
         
         if (inside_mesh) {
             accumulated_density += material_density * step_size;
@@ -132,7 +159,7 @@ vec3 ray_march(vec3 ray_origin, vec3 ray_direction) {
         total_distance += step_size;
         
         // Stop if we've gone too far or accumulated too much density
-        if (total_distance > 5.0 || accumulated_density > 2.0) {
+        if (total_distance > max_distance || accumulated_density > 2.0) {
             break;
         }
     }

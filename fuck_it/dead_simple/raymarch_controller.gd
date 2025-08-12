@@ -8,7 +8,7 @@ class_name RayMarchController
 var shader_material: ShaderMaterial
 var vertex_texture: ImageTexture
 var grid_texture: ImageTexture
-var grid_resolution: int = 128  # Much higher resolution: 128x128x128 grid cells
+var grid_resolution: int = 64  # Reduced resolution for faster preprocessing
 
 func _ready():
     # Get references if not assigned
@@ -63,11 +63,13 @@ func extract_mesh_data():
     var triangle_count = indices.size() / 3
     print("Mesh has ", vertices.size(), " vertices and ", triangle_count, " triangles")
     
-    # Remove triangle limit - we'll use spatial acceleration instead
-    print("Processing all ", triangle_count, " triangles with spatial acceleration")
-    
     # Calculate mesh bounds for spatial grid
     var mesh_bounds = calculate_mesh_bounds(vertices)
+    print("Mesh bounds: ", mesh_bounds[0], " to ", mesh_bounds[1])
+    print("Mesh size: ", mesh_bounds[1] - mesh_bounds[0])
+    
+    # Remove triangle limit - we'll use spatial acceleration instead
+    print("Processing all ", triangle_count, " triangles with spatial acceleration")
     
     # Create vertex texture and spatial grid
     create_vertex_texture(vertices, indices, triangle_count)
@@ -121,25 +123,36 @@ func create_spatial_grid(vertices: PackedVector3Array, indices: PackedInt32Array
     var max_bound = bounds[1] as Vector3
     var grid_size = max_bound - min_bound
     
-    # Create a simple grid texture: each cell stores triangle IDs
-    # For now, we'll use a simpler approach: store triangle density per cell
-    var grid_image = Image.create(grid_resolution, grid_resolution * grid_resolution, false, Image.FORMAT_RF)
+    print("Building spatial acceleration grid...")
+    print("Mesh bounds: ", min_bound, " to ", max_bound)
+    print("Grid size: ", grid_size)
+    print("Triangle count: ", triangle_count)
+    print("Grid resolution: ", grid_resolution, "^3")
     
-    # Count triangles per grid cell
-    var triangle_counts = {}
+    # Create spatial grid that stores triangle indices per cell
+    var triangle_grid = {}  # Dictionary of Vector3i -> Array of triangle indices
+    var max_triangles_per_cell = 0
     
+    # For each triangle, find which grid cells it intersects
     for i in range(triangle_count):
         var tri_base = i * 3
-        # Get triangle vertices
         var v0 = vertices[indices[tri_base]]
         var v1 = vertices[indices[tri_base + 1]]
         var v2 = vertices[indices[tri_base + 2]]
         
         # Find triangle bounding box
-        var tri_min = Vector3(min(v0.x, min(v1.x, v2.x)), min(v0.y, min(v1.y, v2.y)), min(v0.z, min(v1.z, v2.z)))
-        var tri_max = Vector3(max(v0.x, max(v1.x, v2.x)), max(v0.y, max(v1.y, v2.y)), max(v0.z, max(v1.z, v2.z)))
+        var tri_min = Vector3(
+            min(v0.x, min(v1.x, v2.x)),
+            min(v0.y, min(v1.y, v2.y)),
+            min(v0.z, min(v1.z, v2.z))
+        )
+        var tri_max = Vector3(
+            max(v0.x, max(v1.x, v2.x)),
+            max(v0.y, max(v1.y, v2.y)),
+            max(v0.z, max(v1.z, v2.z))
+        )
         
-        # Find affected grid cells
+        # Convert to grid coordinates
         var cell_min = Vector3i(
             int((tri_min.x - min_bound.x) / grid_size.x * grid_resolution),
             int((tri_min.y - min_bound.y) / grid_size.y * grid_resolution),
@@ -152,35 +165,64 @@ func create_spatial_grid(vertices: PackedVector3Array, indices: PackedInt32Array
         )
         
         # Clamp to grid bounds
-        cell_min = Vector3i(max(0, cell_min.x), max(0, cell_min.y), max(0, cell_min.z))
-        cell_max = Vector3i(min(grid_resolution-1, cell_max.x), min(grid_resolution-1, cell_max.y), min(grid_resolution-1, cell_max.z))
+        cell_min = Vector3i(
+            max(0, cell_min.x), max(0, cell_min.y), max(0, cell_min.z)
+        )
+        cell_max = Vector3i(
+            min(grid_resolution-1, cell_max.x), 
+            min(grid_resolution-1, cell_max.y), 
+            min(grid_resolution-1, cell_max.z)
+        )
         
-        # Add triangle to affected cells
+        # Add triangle to all intersected cells
         for x in range(cell_min.x, cell_max.x + 1):
             for y in range(cell_min.y, cell_max.y + 1):
                 for z in range(cell_min.z, cell_max.z + 1):
                     var cell_key = Vector3i(x, y, z)
-                    if not triangle_counts.has(cell_key):
-                        triangle_counts[cell_key] = []
-                    triangle_counts[cell_key].append(i)
+                    if not triangle_grid.has(cell_key):
+                        triangle_grid[cell_key] = []
+                    triangle_grid[cell_key].append(i)
+                    max_triangles_per_cell = max(max_triangles_per_cell, triangle_grid[cell_key].size())
     
-    # Store grid data (simplified: just triangle density for now)
-    for cell_pos in triangle_counts:
+    # Create a texture to store triangle indices per cell
+    # Each cell gets multiple pixels to store triangle IDs
+    var triangles_per_cell = min(max_triangles_per_cell, 32)  # Cap at 32 triangles per cell
+    var grid_texture_width = grid_resolution
+    var grid_texture_height = grid_resolution * grid_resolution * triangles_per_cell
+    
+    var grid_image = Image.create(grid_texture_width, grid_texture_height, false, Image.FORMAT_RF)
+    
+    # Fill the grid texture with triangle indices
+    for cell_pos in triangle_grid:
+        var triangle_list = triangle_grid[cell_pos]
         var x = cell_pos.x
-        var y = cell_pos.y * grid_resolution + cell_pos.z  # Flatten 3D to 2D
-        if y < grid_resolution * grid_resolution:
-            var density = min(1.0, float(triangle_counts[cell_pos].size()) / 20.0)  # Higher normalization for smoother gradients
-            grid_image.set_pixel(x, y, Color(density, 0, 0))
+        var base_y = (cell_pos.y * grid_resolution + cell_pos.z) * triangles_per_cell
+        
+        for i in range(min(triangle_list.size(), triangles_per_cell)):
+            var pixel_y = base_y + i
+            if pixel_y < grid_texture_height:
+                grid_image.set_pixel(x, pixel_y, Color(float(triangle_list[i]), 0, 0, 1))
+        
+        # Mark end of list with -1
+        if triangle_list.size() < triangles_per_cell:
+            var end_marker_y = base_y + triangle_list.size()
+            if end_marker_y < grid_texture_height:
+                grid_image.set_pixel(x, end_marker_y, Color(-1.0, 0, 0, 1))
     
-    # Create grid texture
+    # Create and pass grid texture to shader
     grid_texture = ImageTexture.new()
     grid_texture.set_image(grid_image)
     
-    # Pass grid data to shader
     shader_material.set_shader_parameter("grid_texture", grid_texture)
     shader_material.set_shader_parameter("grid_resolution", grid_resolution)
     shader_material.set_shader_parameter("grid_min_bound", min_bound)
     shader_material.set_shader_parameter("grid_max_bound", max_bound)
+    shader_material.set_shader_parameter("triangles_per_cell", triangles_per_cell)
     
-    print("Created spatial grid: ", grid_resolution, "^3 cells, max triangles per cell: ", 
-          triangle_counts.values().map(func(arr): return arr.size()).max() if triangle_counts.size() > 0 else 0)
+    var cells_with_triangles = triangle_grid.size()
+    var total_cells = grid_resolution * grid_resolution * grid_resolution
+    print("Spatial grid created:")
+    print("  Cells with triangles: ", cells_with_triangles, "/", total_cells)
+    print("  Max triangles per cell: ", max_triangles_per_cell)
+    print("  Triangles per cell (capped): ", triangles_per_cell)
+    print("  Grid texture size: ", grid_texture_width, "x", grid_texture_height)

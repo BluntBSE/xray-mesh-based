@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://c80r2yeccysuc"
-path="res://.godot/imported/k9_int_organs_skeleton_alone.fbx-c4f34f8f3abcbd3542757d7501669d97.scn"
+path="res://.godot/imported/k9_int_organs_skeleton_alone.fbx-86a35c43eb872e0e1ec9a16688dedd91.scn"
 
 [deps]
 
-source_file="res://fuck_it/k9_int_organs_skeleton_alone.fbx"
-dest_files=["res://.godot/imported/k9_int_organs_skeleton_alone.fbx-c4f34f8f3abcbd3542757d7501669d97.scn"]
+source_file="res://fuck_it/dead_simple/k9_int_organs_skeleton_alone.fbx"
+dest_files=["res://.godot/imported/k9_int_organs_skeleton_alone.fbx-86a35c43eb872e0e1ec9a16688dedd91.scn"]
 
 [params]
 
